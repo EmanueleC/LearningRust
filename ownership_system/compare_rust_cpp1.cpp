@@ -1,12 +1,13 @@
 // compare rust and c++
 #include <iostream>
 #include <vector>
+using namespace std;
 
 int main(){
-  std::vector<int> data;
-  data.push_back(1);
-  data.push_back(2);
-  int* x = &data[0];
-  data.push_back(3); // reallocation: pointer x is invalidated
-  std::cout << *x;
+  vector<string> data;
+  data.push_back("uno");
+  data.push_back("due");
+  string* x = &data[0];
+  data.push_back("tre"); // reallocation: pointer x is invalidated
+  cout << *x;
 }

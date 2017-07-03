@@ -1,0 +1,317 @@
+\newpage
+\section{Lifetimes, Mutability, Closures}
+
+Un problema comune è quello dei \textbf{dangling pointers} o
+\textbf{use after free}.
+Si verifica ad esempio quando un riferimento vive più a lungo della risorsa
+cui si riferisce.
+
+Set di operazioni che portano al problema:
+
+\begin{enumerate}
+\item Gestisco un qualche tipo di risorsa;
+\item Passo a qualcun altro un riferimento alla risorsa;
+\item Decido che ho finito di usare la risorsa e la dealloco, mentre qualcun
+altro ha un riferimento a essa;
+\item L’altra persona decide di usare il riferimento.
+\end{enumerate}
+
+Il passo 4 non deve mai verificarsi prima del passo 3. Si consideri il seguente
+esempio:
+
+\begin{lstlisting}
+fn skip_prefix(line: &str, prefix: &str) -> &str {
+    // ...
+}
+
+let line = "lang:en=Hello World!";
+let lang = "en";
+
+let v;
+{
+    let p = format!("lang:{}=", lang);  // -+ `p` entra nello scope.
+    v = skip_prefix(line, p.as_str());  //  |
+}                                       // -+ `p` esce dallo scope.
+println!("{}", v);
+\end{lstlisting}
+
+In questo caso la safety di println! dipende da skip\_prefix, che potrebbe
+ritornare line, ancora nello scope, oppure p che invece è andata fuori.
+
+\subsection{Visibility}
+
+Il codice dell’esempio precedente non viene compilato. Occorre informare il
+compilatore del tempo di vita dei riferimenti della funzione skip\_prefix:
+
+\begin{lstlisting}
+fn skip_prefix<'a, 'b>(line: &'a str, prefix: &'b str) -> &'a str {
+    // ...
+}
+\end{lstlisting}
+
+La sintassi 'a, 'b indica il tempo di vita dei riferimenti.
+In questo caso si ritorna il riferimento con tempo di vita 'a (il primo),
+cioè line.
+
+Println! è sicura e il compilatore non segnala nulla.
+
+Le \textbf{annotazioni di lifetimes} (tempo di vita) sono descrittive e non
+prescrittive. Significa che la validità di un riferimento è determinata dal
+codice e non da tali annotazioni.
+
+\subsection{Mutability}
+
+Si può introdurre la mutabilità in Rust con la keyword \textbf{mut}, sia per i
+bindings sia per i riferimenti.
+
+\textbf{Non è possibile avere una struct con campi immutabili e anche campi
+mutabili}.
+
+\subsection{Generics}
+
+A volte c’è la necessità di scrivere una funzione che accetti argomenti di
+diversi tipi. Rust permette di raggiungere questo scopo con i generics.
+I generics sono chiamati \textbf{polimorfismo parametrico} in teoria dei tipi.
+
+Esempio:
+
+\begin{lstlisting}
+enum Option<T> {
+    Some(T),
+    None,
+}
+\end{lstlisting}
+
+Option<T> è un generic, dove T è un tipo qualsiasi (ad esempio Option<i32>).
+Esempio di generic su due tipi:
+
+\begin{lstlisting}
+enum Result<T, E> {
+    Ok(T),
+    Err(E),
+}
+\end{lstlisting}
+
+Esempio di funzione + generics:
+
+\begin{lstlisting}
+fn takes_anything<T>(x: T) {
+    // Operazioni su x.
+}
+\end{lstlisting}
+
+\subsection{Drop}
+
+È un trait particolare della libreria std di Rust. Permette di eseguire del
+codice quando un valore di un tipo che implementa Drop va out of scope.
+I valori vanno out of scope in ordine inverso rispetto alla
+dichiarazione.
+Esempio:
+
+\begin{lstlisting}
+struct HasDrop;
+
+impl Drop for HasDrop {
+    fn drop(&mut self) {
+        println!("Dropping!");
+    }
+}
+
+fn main() {
+    let x = HasDrop;
+
+    // Altre operazioni...
+
+} // x va out of scope
+\end{lstlisting}
+
+Quando la x va out of scope il codice di Drop::drop() (unica funzione del trait)
+viene eseguito e stampa \textit{Dropping!}.
+
+Drop viene usato per ripulire ogni risorsa associata a una
+struttura.
+
+\subsection{Closures}
+
+Si possono vedere come dei wrappers per le funzioni.
+
+Esempio di closure
+
+\begin{lstlisting}
+let plus_one = |x: i32| x + 1; // closure
+assert_eq!(2, plus_one(1));
+\end{lstlisting}
+
+Viene creato un binding (plus\_one) a cui si assegna una closure.
+La x è l’argomento e l’espressione x + 1 è il corpo.
+
+Altro esempio:
+
+\begin{lstlisting}
+let plus_two = |x| { // multi-line closure
+    let mut result: i32 = x;
+    result += 1;
+    result += 1;
+    result
+};
+\end{lstlisting}
+
+Non occorre scrivere il tipo degli argomenti e la sintassi è leggermente diversa
+rispetto alle funzioni.
+
+Le closures possono usare bindings definiti nel loro blocco e anche local
+bindings.
+
+\begin{lstlisting}
+let num = 5;
+let plus_num = |x: i32| x + num;
+\end{lstlisting}
+
+Il seguente esempio dà errore:
+
+\begin{lstlisting}
+let mut num = 5;
+let plus_num = |x: i32| x + num;
+
+let y = &mut num;
+error: cannot borrow num as mutable because it is also borrowed as immutable
+    let y = &mut num;
+\end{lstlisting}
+
+Non è possibile prendere un riferimento mutabile a num se la closure plus\_num
+ne ha già preso uno immutabile.
+
+Il problema si risolve limitando la visibilità della closure.
+
+\subsubsection{Move closure}
+
+Qui num viene incrementato di 5:
+
+\begin{lstlisting}
+let mut num = 5;
+{
+    let mut add_num = |x: i32| num += x;
+    add_num(5);
+}
+assert_eq!(10, num);
+
+// qui num rimane 5, grazie alla keyword move
+
+let mut num = 5;
+{
+    let mut add_num = move |x: i32| num += x;
+    add_num(5);
+}
+assert_eq!(5, num);
+\end{lstlisting}
+
+num è un i32 e implementa il trait Copy.
+Non viene preso un riferimento mutabile a num ma viene presa l'ownership di una
+sua copia.
+
+\subsection{Gestione degli errori}
+
+Rust divide gli errori software in due tipi di errori:
+
+\begin{itemize}
+  \item \textbf{Recuperabili}: il problema viene riportato all'utente e si ritenta
+l'operazione che ha portato all'errore.
+  \item \textbf{Irrecuperabili}: bugs, ad esempio errore di accesso a un array.
+\end{itemize}
+
+Rust non permette di lanciare eccezioni (sono assenti), ma permette di usare il tipo
+Result<T, E> per errori recuperabili e la macro panic! per interrompere l'esecuzione
+nel caso di errori irrecuperabili.
+
+Il tipo Result ha due varianti, Ok ed Err:
+
+\begin{lstlisting}
+enum Result<T, E> {
+    Ok(T),
+    Err(E),
+}
+\end{lstlisting}
+
+T rappresenta un tipo di valore ritornato solo in caso di successo, mentre
+E rappresenta il tipo d'errore.
+
+Esempio di funzione che ritorna un Result (apertura di un file, File::open):
+
+\begin{lstlisting}
+use std::fs::File;
+
+fn main() {
+    let f = File::open("hello.txt");
+
+    let f = match f {
+        Ok(file) => file,
+        Err(error) => {
+            panic!("There was a problem opening the file: {:?}", error)
+        },
+    };
+}
+\end{lstlisting}
+
+Occorre intraprendere diverse azioni a seconda del risultato della funzione.
+
+Se il risultato è Ok, assegnamo il file dentro la variante Ok alla variabile f
+così da poterla usare in seguito per operazioni di lettura/scrittura.
+
+Se si è verificato un errore, il valore viene estratto dalla variante Err e
+stampato insieme a un messaggio quando il main thread panica.
+
+Nel codice precedente, non si tiene in considerazione il tipo di errore, si
+fa la stessa cosa per tutti i casi in cui File::open ritorna Err.
+
+Si può effettuare un match su più errori, come nel codice seguente, che
+distingue l'errore NotFound (file non trovato) da tutti gli altri.
+
+Se l'errore è NotFound, si cerca di creare il file con la funzione File::open,
+che a sua volta ritorna un Result ed è quindi necessario gestirlo.
+
+\begin{lstlisting}
+use std::fs::File;
+use std::io::ErrorKind;
+
+fn main() {
+    let f = File::open("hello.txt");
+
+    let f = match f {
+        Ok(file) => file,
+        Err(ref error) if error.kind() == ErrorKind::NotFound => {
+            match File::create("hello.txt") {
+                Ok(fc) => fc,
+                Err(e) => {
+                    panic!(
+                        "Tried to create file but there was a problem: {:?}",
+                        e
+                    )
+                },
+            }
+        },
+        Err(error) => {
+            panic!(
+                "There was a problem opening the file: {:?}",
+                error
+            )
+        },
+    };
+}
+\end{lstlisting}
+
+La condizione \texttt{if error.kind() == ErrorKind::NotFound} è chiamata
+guardia del match. Si tratta di una condizione extra che rifinisce ulteriormente
+il ramo Err del match iniziale.
+
+Il metodo \textbf{unwrap} è un metodo shortcut che fa esattamente lo stesso lavoro
+della prima versione di gestione d'errore scritta per File::open(): se il valore
+di Result è Ok, unwrap ritorna il valore all'interno di Ok. Se è Err, unwrap richiama
+la macro panic!.
+
+\begin{lstlisting}
+use std::fs::File;
+
+fn main() {
+    let f = File::open("hello.txt").unwrap();
+}
+\end{lstlisting}

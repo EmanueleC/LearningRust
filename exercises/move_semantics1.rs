@@ -1,4 +1,6 @@
-/* Make the following code compile
+/* Exercise taken from https://github.com/carols10cents/rustlings
+
+Make the following code compile
 
 pub fn main() {
     let vec0 = Vec::new();

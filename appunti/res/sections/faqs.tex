@@ -1,0 +1,52 @@
+\newpage
+\section{Considerazioni generali e conclusioni}
+
+\subsection{Rust è un linguaggio dotato di garbage collection?}
+
+No. Una delle innovazioni fondamentali di Rust è il garantire la sicurezza
+della memoria (nessun errore di segmentazione) senza richiedere un garbage
+collector.
+
+Evitando di utilizzare un GC, Rust offre numerosi vantaggi: liberazione
+prevedibile delle risorse, gestione della memoria meno onerosa e soprattutto
+nessun sistema aggiuntivo operante durante l’esecuzione.
+
+Tutte queste caratteristiche rendono Rust leggero e facile da implementare in
+contesti arbitrari e rendono più facile integrare Rust con i linguaggi in
+possesso di un GC.
+
+Rust non necessita di un GC grazie al suo sistema di ownership/borrowing ma lo
+stesso sistema aiuta con una moltitudine di altri problemi, inclusi la gestione
+delle risorse in generale e la concorrenza (vedi sezione \ref{sec:concorrenza}).
+
+Qualora il possesso di un valore non fosse abbastanza, i programmi Rust fanno
+riferimento al tipo puntatore intelligente standard a conteggio dei riferimenti
+Rc e alla sua versione sicura in contesti paralleli Arc, invece di affidarsi a
+un GC.
+
+\subsection{Aspetti positivi}
+
+\begin{itemize}
+  \item Commenti dettagliati da parte del compilatore in risposta agli errori
+che aiutano a individuare il problema
+  \item Niente npe, niente dangling pointers
+  \item Niente data races
+\end{itemize}
+
+\subsection{Aspetti negativi}
+
+\begin{itemize}
+  \item Lunghi tempi di apprendimento
+  \item Lotta contro il compilatore (difficile comprensione del sistema di
+ownership e delle regole di borrowing) da parte dei programmatori
+\end{itemize}
+
+\subsection{Aspetti neutri - dipende dal contesto, dagli scopi e altri fattori}
+
+\begin{itemize}
+  \item Linguaggio giovane (nato nel 2010)
+  \item Librerie, guide e tutorial in fase di espansione
+  \item Niente eccezioni
+  \item Niente GC
+  \item Da valutare la scelta in base a due indicatori: performances e memory safety.
+\end{itemize}

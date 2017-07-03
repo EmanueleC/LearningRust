@@ -1,0 +1,312 @@
+\newpage
+\section{Elementi principali del linguaggio}
+
+\textbf{Rust}:
+
+\begin{itemize}
+  \item è un linguaggio \textbf{staticamente tipato}
+  \item utilizza \textbf{type inference}
+  \item è ``\textbf{expression-based}'' (le espressioni ritornano un
+valore, gli statements no)
+\end{itemize}
+
+\subsection{Costrutti - parti più importanti}
+
+\subsubsection{Variable bindings}
+
+Le variabili vanno \textbf{sempre} inizializzate e legano un tipo a un valore.
+
+``Vivono'' solo all'interno del blocco in cui vengono dichiarate e possono
+essere eventualmente oscurate.
+
+Uso di pattern matching:
+
+\begin{lstlisting}
+let (x,y) = (1,2)
+\end{lstlisting}
+
+Di default le variabili sono \textbf{immutabili} (a meno che non si usi
+esplicitamente la keyword \textbf{mut})
+
+\subsubsection{Funzioni}
+
+Nonostante Rust utilizzi type inference, i tipi degli argomenti di una funzione
+vanno dichiarati (a scopo documentativo).
+
+Il tipo di ritorno va scritto dopo la freccia -> e deve essere
+\textbf{unico}.
+
+\begin{lstlisting}
+fn function(x1: t1, ... , xn: tn) -> tr
+\end{lstlisting}
+
+L'ultima linea del corpo di una funzione determina cosa ritornare.
+Perciò se la funzione ritorna qualcosa l'ultima linea non può essere uno
+statement, deve essere una espressione (niente punto e virgola).
+
+Statements: terminano con ; le espressioni no.
+
+\subsubsection{Tipi primitivi}
+
+Booleani, caratteri, numerici, arrays, "slices", stringhe, tuple e funzioni.
+
+Un tipo numerico è solitamente composto da due parti:
+
+\begin{itemize}
+\item \textbf{categoria} es. signed, unsigned, integer, float \dots
+\item \textbf{dimensione} es 8, 16, 32, 64 bits
+\end{itemize}
+
+Altri tipi generici utili: opzione \textbf{Option<T>}, singoletto:
+\textbf{Unit ()}, risultato: \textbf{Result<T>}.
+
+Uno slice è un riferimento o una ``vista'' a un'altra struttura dati, ad esempio
+un array.
+
+Permette un accesso sicuro ed efficiente a una porzione dell'array senza bisogno
+di farne prima una copia.
+
+Sintassi: \& simile ai riferimenti in C/C++, seguita da [ ] per il range (\&[ ]).
+
+\begin{lstlisting}
+let a = [0, 1, 2, 3, 4];
+// Uno slice con tutti gli elementi di a.
+let complete = &a[..];
+// Uno slice di a con 1,2 e 3.
+let middle = &a[1..4];
+\end{lstlisting}
+
+\subsubsection{If}
+If è una espressione e il risultato può essere assegnato a una variabile.
+If senza else ritorna ().
+
+I rami if ed else devono ritornare tipi compatibili tra loro.
+
+\subsubsection{Cicli}
+
+Sintassi:
+\begin{lstlisting}
+for var in expression {
+    code
+}
+\end{lstlisting}
+
+\subsubsection{Vettori}
+
+L'indexing va fatto con il tipo usize:
+
+\begin{lstlisting}
+let v = vec![1,2,3];
+let i: usize = 0;
+let j: i32 = 0;
+v[i]; // ok
+v[j]; // no
+\end{lstlisting}
+
+Se si va out-of-scope, la funzione main non ritorna e il thread si ferma
+(panica).
+
+Meglio usare \textbf{get o get\_mut}, che in caso di out-of-scope ritornano
+\textbf{None}.
+
+Iterazione: per riferimento (mutabile o immutabile), oppure prendendo
+l'ownership del vettore (vedi sezione \ref{sec:ownership}). Nel secondo caso
+il vettore NON potrà più essere usato.
+
+\begin{lstlisting}
+let mut v = vec![1, 2, 3, 4, 5];
+
+for i in &v { // per riferimento immutabile
+    println!("A reference to {}", i);
+}
+
+for i in &mut v { // per riferimento mutabile
+    println!("A mutable reference to {}", i);
+}
+
+for i in v { // prende l'ownership
+    println!("Take ownership of the vector and its element {}", i);
+} // dopo v diventa inutilizzabile
+\end{lstlisting}
+
+\subsubsection{Match}
+
+\subsection{Traits e Traits objects}
+
+Un match deve essere completo, cioè deve coprire ogni possibilità.
+Se ogni possibilità viene coperta da un match, l’aggiunta di varianti a un
+enum causerà un errore di compilazione, invece che un problema durante
+l'esecuzione.
+Questo tipo di assistenza permette di modificare il codice Rust liberamente.
+
+\subsubsection{Traits}
+
+Si può pensare a un trait come a un'interfaccia: è una notazione per aggiungere
+un comportamento extra a un particolare tipo.
+
+Un trait è una caratteristica del linguaggio Rust che comunica al compilatore
+che tipo di funzionalità viene fornita da un certo tipo.
+
+Nel seguente esempio viene implementato il trait HasArea per Circle:
+
+\begin{lstlisting}
+struct Circle {
+    x: f64,
+    y: f64,
+    radius: f64,
+}
+
+trait HasArea {
+// self si riferisce a un'istanza del tipo che implementa il trait
+    fn area(&self) -> f64; // solo la segnatura della funzione
+}
+
+impl HasArea for Circle { // implementazione
+    fn area(&self) -> f64 {
+        std::f64::consts::PI * (self.radius * self.radius)
+    }
+}
+\end{lstlisting}
+
+\subsubsection{Trait objects}
+
+Rust preferisce il dispatch statico ma fornisce anche il dispatch dinamico,
+tramite i trait objects:
+
+\begin{lstlisting}
+trait Foo {
+    fn method(&self) -> String;
+}
+
+// Ora viene implementato per utf8 e String:
+impl Foo for u8 {
+    fn method(&self) -> String { format!("u8: {}", *self) }
+}
+
+impl Foo for String {
+    fn method(&self) -> String { format!("string: {}", *self) } }
+\end{lstlisting}
+
+Possiamo usare questo trait per il dispatch statico:
+
+\begin{lstlisting}
+fn do_something<T: Foo>(x: T) {
+    x.method();
+}
+
+fn main() {
+    let x = 5u8;
+    let y = "Hello".to_string();
+    do_something(x);
+    do_something(y);
+}
+\end{lstlisting}
+
+In questo esempio Rust usa la ``\textbf{monomorphization}'' per il dispatch
+statico. Ciò significa che verranno create delle versioni specializzate di
+do\_something per u8 e per String.
+
+Le chiamate a do\_something verranno rimpiazzate con queste funzioni
+specializzate.
+
+Rust genera quindi qualcosa di simile:
+
+\begin{lstlisting}
+fn do_something_u8(x: u8) {
+    x.method();
+}
+
+fn do_something_string(x: String) {
+    x.method();
+}
+
+fn main() {
+    let x = 5u8;
+    let y = "Hello".to_string();
+
+    do_something_u8(x);
+    do_something_string(y);
+}
+\end{lstlisting}
+
+Il dispatch statico permette l'inlining delle chiamate di funzioni (sostituzione
+della chiamata con il corpo della funzione) perché il chiamante è noto a tempo
+di compilazione.
+
+L'inlining è una buona ottimizzazione che però richiede un tradeoff, cioè il
+``code bloat'' (rigonfiamento di codice).
+
+Rust fornisce il dispatch dinamico attraverso i trait objects, come \&Foo, cioè
+oggetti che contengono un valore di un tipo qualsiasi che implementi il trait
+dato.
+
+Il tipo preciso può essere conosciuto solo a runtime.
+
+Dispatch dinamico con trait objects e casting:
+
+\begin{lstlisting}
+fn do_something(x: &Foo) {
+    x.method();
+}
+
+fn main() {
+    let x = 5u8;
+    do_something(&x as &Foo);
+}
+\end{lstlisting}
+
+Con coercizione:
+
+\begin{lstlisting}
+fn do_something(x: &Foo) {
+    x.method();
+}
+
+fn main() {
+    let x = "Hello".to_string();
+    do_something(&x);
+}
+\end{lstlisting}
+
+Do\_something in questi due casi di dispatch dinamico \textbf{non} viene
+specializzata.
+
+\textbf{Svantaggi}: virtual function calls più lente e no inlining.
+
+\subsubsection{Object safety}
+
+Non tutti i trait possono essere usati per formare trait objects.
+Ad esempio, i vector implementano il trait Clone e se proviamo a creare un trait
+object:
+
+\begin{lstlisting}
+let v = vec![1, 2, 3];
+let o = &v as &Clone;
+\end{lstlisting}
+
+viene segnalato l'errore:
+
+\begin{lstlisting}
+error: cannot convert to a trait object because trait core::clone::Clone is
+not object-safe [E0038]
+
+let o = &v as &Clone;
+        ^~
+note: the trait cannot require that Self : Sized
+
+let o = &v as &Clone;
+        ^~
+\end{lstlisting}
+
+L'errore dice che clone non è \textbf{object-safe}.
+
+\begin{itemize}
+  \item Un \textbf{trait} è object safe se non richiede self: sized e tutti i suoi
+metodi sono object safe.
+
+  \item Un \textbf{metodo} è object-safe se richiede self: sized oppure...
+\begin{itemize}
+  \item Non ha type parameters
+  \item Non usa self
+\end{itemize}
+\end{itemize}

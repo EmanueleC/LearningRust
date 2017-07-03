@@ -1,4 +1,6 @@
-/* Make the following code compile without changing line 9!
+/* Exercise taken from https://github.com/carols10cents/rustlings
+
+Make the following code compile without changing line 9!
 
 pub fn main() {
     let vec0 = Vec::new();

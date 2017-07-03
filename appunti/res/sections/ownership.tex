@@ -1,0 +1,232 @@
+\newpage
+\section{Ownership System}
+\label{sec:ownership}
+
+Rust è un linguaggio che tiene particolarmente alla cosiddetta
+\textbf{memory safety}, una proprietà che assicura la protezione da bugs e
+vulnerabilità quando si ha a che fare con la memoria (errori di accesso,
+variabili non inizializzate, memory leaks, \dots).
+
+Per far fronte a queste problematiche, utilizza un sistema chiamato
+\textbf{ownership system}, che ha lo scopo di segnalare al programmatore un
+utilizzo non sicuro della memoria a tempo di compilazione.
+
+Utilizza forme di astrazione poco costose per raggiungere tali obiettivi
+(``\textbf{zero cost abstractions}'').
+
+Il metodo di ownership viene controllato a tempo di compilazione, così non si
+hanno costi aggiuntivi a tempo di esecuzione.
+
+Uno svantaggio risiede nei tempi di apprendimento di questi concetti da parte
+dei programmatori.
+
+\paragraph{In generale:} un valore possiede sempre e solo un owner alla
+volta, che può essere una variabile, una funzione, un thread, \dots
+
+Come viene allocata la memoria per i vettori:
+
+\begin{lstlisting}
+fn foo() {
+    let v = vec![1, 2, 3];
+}
+\end{lstlisting}
+
+\begin{itemize}
+\item Quando v acquisisce visibilità, un nuovo vettore viene creato sullo stack
+e viene allocato dello spazio sullo heap per i suoi elementi
+\item Quando v non è più visibile, Rust pulisce tutto ciò che era relazionato
+al vettore, anche la memoria sullo heap.
+Questo avviene in modo deterministico alla fine dello scope.
+\end{itemize}
+
+\subsection{La semantica Move}
+
+Riassumendo: quando l'owner di un valore cambia, non è più possibile usare
+l'owner precedente per accedere a quel valore.
+
+\paragraph{Nota:} i prossimi due esempi funzionano solo perché si usa
+il tipo vector.
+
+Con i tipi primitivi è diverso, perché implementano il trait copy.
+
+\begin{lstlisting}
+let v = vec![1, 2, 3];
+let v2 = v; // cambia l'owner
+
+println!("v[0] is: {}", v[0]); // errore, non posso usare v!
+println!("v2[0] is: {}", v2[0]); // ok
+\end{lstlisting}
+
+Lo stesso accade quando si tenta di utilizzare qualcosa dopo averlo passato come
+argomento a una funzione.
+
+L'errore in entrambi i casi è \textbf{use of moved value}, cioè si tenta di
+usare un oggetto la cui ownership è stata acquisita da altri.
+
+\begin{lstlisting}
+let v = vec![1, 2, 3];
+let mut v2 = v;
+v2.truncate(2);
+
+// e poi...
+
+v[2] // Rust vieta di usare v (moved value)
+\end{lstlisting}
+
+Il tipo \textbf{COPY} - copia, è un trait che \textbf{cambia la regola
+sull'ownership}.
+
+\begin{lstlisting}
+let v = 1;
+let v2 = v;
+println!("v is: {}", v); // OK!
+\end{lstlisting}
+
+Qui la cosa funziona perché v ha tipo i32 che implementa il trait COPY.
+
+Quando si assegna v a v2 viene fatta una copia completa di v perché il tipo
+i32 non richiede puntatori a dati addizionali.
+
+Tutti i tipi primitivi implementano il trait copy.
+\textbf{(Vector NON è un tipo primitivo)}
+
+Per restituire l'ownership nelle funzioni:
+
+\begin{lstlisting}
+fn foo(v: Vec<i32>) -> Vec<i32> {
+    // Operazioni su v.
+
+    // Restituisce l'ownership.
+    v
+}
+\end{lstlisting}
+
+La cosa può però diventare scomoda:
+
+\begin{lstlisting}
+fn foo(v1: Vec<i32>, v2: Vec<i32>) -> (Vec<i32>, Vec<i32>, i32) {
+    // Operazioni con v1 e v2.
+
+    // Restituisce l'ownership e il risultato della funzione.
+    (v1, v2, 42)
+}
+\end{lstlisting}
+
+\subsection{Borrowing}
+
+Borrowing significa prendere in prestito. Esempio di borrowing:
+
+\begin{lstlisting}
+fn main() {
+
+    fn sum_vec(v: &Vec<i32>) -> i32 {
+        return v.iter().fold(0, |a, &b| a + b);
+    }
+
+    // Borrowing di due vettori e calcolo della loro somma.
+    fn foo(v1: &Vec<i32>, v2: &Vec<i32>) -> i32 {
+        let s1 = sum_vec(v1);
+        let s2 = sum_vec(v2);
+        s1 + s2
+    }
+
+    let v1 = vec![1, 2, 3];
+    let v2 = vec![4, 5, 6];
+    let answer = foo(&v1, &v2);
+    println!("{}", answer);
+}
+\end{lstlisting}
+
+Anziché prendere i vettori come argomenti, foo accetta dei riferimenti al tipo
+Vec<i32>.
+\textbf{ \&T è un tipo riferimento immutabile}, non prende pieno possesso della
+risorsa, ma ne \textbf{prende in prestito l'ownership}.
+
+Un binding che prende in prestito qualcosa non dealloca la risorsa quando va
+out-of-scope. Ciò significa che al termine di foo è possibile usare ancora i
+bindings originali.
+
+C’è un altro tipo di riferimenti: quelli mutabili (\&mut T).
+Per accedere al contenuto di un riferimento, si usa * (come in C++).
+Il seguente esempio mostra come si può cambiare il contenuto di un riferimento
+mutabile:
+
+\begin{lstlisting}
+let mut x = 5;
+{ // nota: metto un extra scope, altrimenti non funziona
+    let y = &mut x;
+    *y += 1;
+}
+println!("{}", x); // stampa 6
+\end{lstlisting}
+
+Ci sono delle regole da seguire...
+
+\subsection{Regole per il borrowing in Rust}
+
+Prima di tutto, ogni borrow deve avere uno scope \textbf{non più grande} di
+quello dell’owner (non può vivere più a lungo).
+
+Inoltre, possono valere le seguenti condizioni \textbf{in mutua esclusione}:
+
+\begin{itemize}
+\item \textbf{Uno o più riferimenti immutabili} a una risorsa
+\item Esattamente \textbf{un riferimento mutabile} a una risorsa
+\end{itemize}
+
+Un esempio...
+
+\begin{lstlisting}
+fn main() {
+    let mut x = 5;
+    let y = &mut x;
+    *y += 1;
+    println!("{}", x); // no
+}
+\end{lstlisting}
+
+Sbagliato perché esiste un riferimento mutabile y, non è possibile usare anche
+un riferimento immutabile in println. Il compilatore segnala:
+
+\begin{lstlisting}
+error: cannot borrow `x` as immutable because it is also borrowed as mutable
+    println!("{}", x);
+\end{lstlisting}
+
+Si corregge come segue...
+
+\begin{lstlisting}
+let mut x = 5;
+{
+    let y = &mut x; // -+ borrowing mutabile &mut inizia qui
+    *y += 1;        //  |
+}                   // -+ ... e finisce qui
+println!("{}", x);  // ok
+\end{lstlisting}
+
+I riferimenti non devono vivere più a lungo della risorsa a cui si riferiscono:
+
+\begin{lstlisting}
+let y: &i32;
+{
+    let x = 5;
+    y = &x;
+}
+println!("{}", y); //errore
+\end{lstlisting}
+
+Il riferimento y è valido solo nello scope in cui vive x, non al di fuori
+(analogo ai dangling pointers in C/C++).
+
+Un altro esempio di errore meno evidente:
+
+\begin{lstlisting}
+let y: &i32;
+let x = 5;
+y = &x;
+println!("{}", y);
+\end{lstlisting}
+
+y è dichiarata per prima e poiché nello stesso scope le risorse sono deallocate
+in ordine inverso (prima x e poi y) quindi y vivrà più a lungo di x.
+Questo non è ammesso perché y è un riferimento a x.

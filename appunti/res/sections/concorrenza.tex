@@ -1,0 +1,340 @@
+\newpage
+\section{Concorrenza}
+\label{sec:concorrenza}
+
+Accanto alla memory safety, un altro degli obiettivi di Rust è quello di
+essere un linguaggio in grado di gestire codice concorrente in modo sicuro.
+
+L'ambito della concorrenza è storicamente complesso ed è più facile commettere
+degli errori. Rust affronta la questione facendo affidamento sul suo ownership
+system. Dopotutto alcuni errori sono comuni (le data races sono errori di
+accesso alla memoria ed errori di concorrenza).
+
+I seguenti 2 traits indicano la presenza di codice parallelo:
+
+\begin{itemize}
+\item \textbf{Send}: Quando un tipo T implementa Send, si dice che un’istanza
+del tipo T è in grado di trasferire l'ownership in modo sicuro tra più threads.
+\item \textbf{Sync}: Quando un tipo T implementa Sync, si dice che un'istanza
+del tipo T non può introdurre memory unsafety quando è usata su più threads
+concorrenti che condividono memoria.
+Ne consegue che tipi non mutabili sono intrinsecamente Sync.
+\end{itemize}
+
+Per condividere riferimenti tra threads, Rust fornisce il tipo wrapped: Arc<T>.
+Arc<T> implementa Send e Sync se e solo se T implementa SIA Send che Sync.
+Se un oggetto di tipo T non implementa Sync (o Send), allora Arc<T> non potrà
+implementare né Send né Sync e di conseguenza un oggetto di tipo Arc<T> non
+potrà essere trasferito tra più threads.
+
+\paragraph{Threads} La Rust Standard Library fornisce supporto per i threads.
+
+Il metodo thread::spawn accetta una closure, che viene eseguita in un nuovo
+thread, e ritorna un gestore che può essere usato per attendere che il thread
+finisca il suo lavoro ed estrarre il risultato.
+
+\begin{lstlisting}
+use std::thread;
+fn main() {
+    let handle = thread::spawn(|| {
+        "Hello from a thread!"
+    });
+    println!("{}", handle.join().unwrap());
+}
+\end{lstlisting}
+
+Molti linguaggi hanno la capacità di eseguire threads, ma spesso questo conduce
+a risultati non sicuri.
+
+Lo stesso sistema di ownership che aiuta a prevenire l’uso scorretto di
+puntatori, aiuta anche a prevenire race conditions.
+Come esempio, il seguente programma in Rust, che causerebbe una race condition
+in altri linguaggi, non compila.
+
+\begin{lstlisting}
+use std::thread;
+use std::time:: Duration;
+
+fn main() {
+    let mut data = vec![1, 2, 3];
+
+    for i in 0..3 {
+        thread::spawn(move || {
+            data[0] += i;
+        });
+    }
+
+    thread::sleep(Duration::from_millis(50));
+}
+\end{lstlisting}
+
+L’errore è il seguente:
+
+
+\begin{lstlisting}
+8:17 error: capture of moved value: `data`
+        data[0] += i;
+        ^~~~
+\end{lstlisting}
+
+Rust sa che questo comportamento non è safe. Se avessimo un riferimento a data
+in ogni thread, e i threads prendessero l’ownership del riferimento, avremmo
+tre owners (errore).
+
+Quindi abbiamo bisogno di un tipo che ci permetta di avere più di un riferimento
+a un valore.
+
+Solitamente viene usato Rc<T> - Reference count per questo, che permette una
+ownership condivisa e mantiene il numero di riferimenti a una risorsa.
+Invocare clone() su di una risorsa condivisa ritornerà un nuovo riferimento e
+incrementerà il contatore.
+
+Esempio:
+
+\begin{lstlisting}
+use std::thread;
+use std::time::Duration;
+use std::rc::Rc;
+
+fn main() {
+    let mut data = Rc::new(vec![1, 2, 3]);
+
+    for i in 0..3 {
+        // Crea un nuovo riferimento
+        let data_ref = data.clone();
+
+        // e lo usa nei threads
+        thread::spawn(move || {
+            data_ref[0] += i;
+        });
+    }
+
+    thread::sleep(Duration::from_millis(50));
+}
+\end{lstlisting}
+
+Questo codice dà ancora errore:
+
+\begin{lstlisting}
+13:9: 13:22 error: the trait bound
+`alloc::rc::Rc<collections::vec::Vec<i32>> : core::marker::Send`
+            is not satisfied
+...
+13:9: 13:22 note: `alloc::rc::Rc<collections::vec::Vec<i32>>`
+            cannot be sent between threads safely
+\end{lstlisting}
+
+Rc non può essere inviato attraverso threads in modo sicuro.
+Questo accade perché il contatore di riferimenti Rc non soddisfa il trait Send.
+Per risolvere questo problema, si usa il tipo menzionato in precedenza Arc<T>,
+il tipo standard  contatore di riferimenti atomico di Rust.
+
+Il compilatore garantisce che il cambiamento del contatore interno sia
+un'operazione indivisibile, cioè che non può avere data races.
+
+In sostanza, Arc<T> è un tipo che permette di condividere ownership di risorse
+attraverso più threads.
+
+\begin{lstlisting}
+use std::thread;
+use std::sync::Arc;
+use std::time::Duration;
+
+fn main() {
+    let mut data = Arc::new(vec![1, 2, 3]);
+
+    for i in 0..3 {
+        let data = data.clone();
+        thread::spawn(move || {
+            data[0] += i;
+        });
+    }
+
+    thread::sleep(Duration::from_millis(50));
+}
+\end{lstlisting}
+
+Nonostante tutto, c’è ancora un errore:
+
+\begin{lstlisting}
+<anon>:11:24 error: cannot borrow immutable borrowed content as mutable
+<anon>:11                    data[0] += i;
+                             ^~~~
+\end{lstlisting}
+
+Arc<T> per default ha un contenuto immutabile. Permette la condivisione, ma di
+dati immutabili. Per questo motivo l'operazione += su data[0] causa errore.
+
+C'è bisogno di un tipo che permetta di mutare in modo safe lo stato
+di un valore condiviso da più threads, per esempio un tipo che possa assicurare
+che solo un thread alla volta sia in grado di mutare il valore.
+
+Il tipo in questione è Mutex<T>. Di seguito viene riportata la versione di
+codice funzionante:
+
+\begin{lstlisting}
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::Duration;
+
+fn main() {
+    let data = Arc::new(Mutex::new(vec![1, 2, 3]));
+
+    for i in 0..3 {
+        let data2 = data.clone();
+        thread::spawn(move || {
+            let mut data_mut = data2.lock().unwrap();
+            data_mut[0] += i;
+        });
+    }
+
+    thread::sleep(Duration::from_millis(50));
+}
+\end{lstlisting}
+
+Si noti che il valore i è legato alla (copiato) closure e non condiviso
+tra più threads.
+
+Stiamo prendendo il lock sull’oggetto di tipo mutex.
+Il tipo mutex (che sta per mutual exclusion), permette solo a un thread alla
+volta di accedere al suo valore.
+
+Quando si desidera accedere il valore, si usa lock su di esso. Questo
+bloccherà il mutex fino a quando le operazioni da fare non sono finite.
+
+Se un thread tenta di accedere al mutex bloccato, dovrà attendere che l’altro
+thread rilasci il blocco (lock).
+
+Nell’esempio il rilascio del lock è implicito: quando data2 va out of scope,
+il lock è automaticamente rilasciato.
+
+Si noti che il metodo lock di Mutex ha la seguente segnatura:
+
+fn lock(\&self) -> LockResult<MutexGuard<T> >
+
+e visto che Send non è implementato per MutexGuard<T>, la guardia non può
+oltrepassare i confini di un thread, assicurando in tal modo che
+l’acquisizione e il rilascio di un lock avvengano localmente in un thread.
+
+Esaminiamo ora il corpo del thread più nel dettaglio:
+
+\begin{lstlisting}
+thread::spawn(move || {
+    let mut data_mut = data2.lock().unwrap();
+    data_mut[0] += i;
+});
+\end{lstlisting}
+
+Prima di tutto, chiamiamo lock(), che acquisisce il lock su data2.
+Come risultato ritorna Result<T, E> (perché può fallire).
+Unwrap() permette di ottenere un riferimento a data. Questo è solo un esempio
+quindi non c’è gestione degli errori.
+
+A questo punto siamo liberi di modificarlo, visto che abbiamo preso il lock.
+Infine attendiamo un po’ prima che il thread finisca la sua computazione.
+Questo però non è l’ideale: potremmo dover aspettare più o meno del dovuto.
+Un'alternativa più precisa all’uso di un timer è il meccanismo fornito dalla
+Rust Standard Library per permettere la sincronizzazione dei threads: i canali.
+
+\subsection{Channels}
+
+In Rust, la comunicazione message-based può avvenire per mezzo dei seguenti tipi:
+
+\begin{itemize}
+  \item Sender
+  \item SyncSender
+  \item Receiver
+\end{itemize}
+
+Un Sender o un SyncSender può essere usato per inviare dati a un Receiver.
+
+Questi canali possono essere:
+
+\begin{itemize}
+  \item asincroni, unbounded (si può pensare che abbiano un buffer infinito).
+La tupla ritornata dalla funzione channel avrà tipo (Sender, Receiver), e
+tutti gli invii sono non bloccanti.
+  \item sincroni, bounded, bloccanti. La tupla ritornata da channel avrà tipo
+(SyncSender, Receiver), in cui il buffer per i messaggi pendenti sarà di una
+dimensione fissata. Tutti gli invii sono bloccanti (se il buffer è pieno,
+attende fino a che non si libera).
+\end{itemize}
+
+La seguente è una versione alternativa di codice che usa i canali anziché
+attendere un tempo specifico:
+
+\begin{lstlisting}
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::sync::mpsc;
+
+fn main() {
+    let data = Arc::new(Mutex::new(0));
+
+    // `tx` : "sender".
+    // `rx` : "receiver".
+    let (tx, rx) = mpsc::channel();
+
+    for _ in 0..10 {
+        let (data2, tx) = (data.clone(), tx.clone());
+
+        thread::spawn(move || {
+            let mut data_mut = data2.lock().unwrap();
+            *data_mut += 1;
+
+            tx.send(()).unwrap();
+        });
+    }
+
+    for _ in 0..10 {
+        rx.recv().unwrap();
+    }
+}
+\end{lstlisting}
+
+Usiamo il metodo mpsc::channel() per costruire un nuovo canale.
+Mpsc significa \textbf{multiple producer, single consumer}.
+
+Inviamo un semplice () – il tipo Unit – attraverso il canale e poi
+rimaniamo in attesa per 10 di essi.
+
+Si può inviare attraverso un canale qualsiasi tipo di dato che implementi
+Send.
+
+\begin{lstlisting}
+use std::thread;
+use std::sync::mpsc;
+
+fn main() {
+    let (tx, rx) = mpsc::channel();
+    for i in 0..10 {
+        let tx = tx.clone();
+
+        thread::spawn(move || {
+            let answer = i * i;
+
+            tx.send(answer).unwrap();
+        });
+    }
+    for _ in 0..10 {
+        println!("{}", rx.recv().unwrap());
+    }
+}
+\end{lstlisting}
+
+Qui creiamo 10 threads e chiediamo a ciascuno di essi di calcolare il
+quadrato di un numero (l’indice i al momento di spawn()) e poi inviamo il
+risultato attraverso il canale tx.
+Se all’interno del thread avviene panic!, il thread si interrompe.
+Si possono usare i threads come meccanismo per isolare parti di lavoro.
+Thread.join() dà un risultato che permette di verificare se il thread ha
+panicato o no.
+
+\begin{lstlisting}
+use std::thread;
+let handle = thread::spawn(move || {
+    panic!("oops!");
+});
+let result = handle.join();
+assert!(result.is_err());
+\end{lstlisting}

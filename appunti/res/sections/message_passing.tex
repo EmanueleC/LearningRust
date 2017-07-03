@@ -1,0 +1,70 @@
+\newpage
+\section{Message Passing}
+
+Un approccio alla concorrenza che sembra crescere in popolarità è il
+\textbf{message passing}, dove i threads (o attori) comunicano inviando fra loro
+messaggi che contengono dati.
+A tal proposito, lo slogan di Go dice:
+
+``Do not communicate by sharing memory; instead, share memory by
+communicating.''
+
+-Effective Go
+
+\subsection{Channels e ownership}
+
+Nel seguente esempio si tenta di usare un valore nel thread dopo averlo inviato
+sul canale:
+
+\begin{lstlisting}
+
+use std::thread;
+use std::sync::mpsc;
+
+fn main() {
+    let (tx, rx) = mpsc::channel();
+
+    thread::spawn(move || {
+        let val = String::from("hi");
+        tx.send(val).unwrap();
+        println!("val is {}", val);
+    });
+
+    let received = rx.recv().unwrap();
+    println!("Got: {}", received);
+}
+\end{lstlisting}
+
+Questa è una cattiva idea: una volta che abbiamo inviato il valore a un altro
+thread, quel thread può modificarlo o chiamare drop prima che il sender
+lo utilizzi di nuovo. Questo potrebbe causare errori dovuti alla non-esistenza
+o inconsistenza dei dati.
+
+Se proviamo a compilare l'esempio, Rust segnala:
+
+
+\begin{lstlisting}
+
+error[E0382]: use of moved value: val
+  --> src/main.rs:10:31
+   |
+9  |         tx.send(val).unwrap();
+   |                 --- value moved here
+10 |         println!("val is {}", val);
+   |                               ^^^ value used here after move
+   |
+   = note: move occurs because val has type
+   std::string::String, which does
+   not implement the Copy trait
+
+\end{lstlisting}
+
+Questo errore di concorrenza ha causato un errore di compilazione.
+Send prende l'ownership dei suoi parametri e sposta (moves) il valore
+in modo da passare l'ownerhip al ricevente.
+
+Questo significa che non è possibile utilizzare il valore di nuovo dopo averlo
+inviato; il sistema di ownership controlla che tutto sia ok.
+
+In questo contesto, message passing è molto simile a single ownership: se solo
+un thread alla volta può usare della memoria, non c'è il rischio di data race.
