@@ -1,2 +1,2 @@
 # LearningRust
-Rust code examples and exercises
+Appunti su Rust in italiano + esempi + piccoli esercizi da https://github.com/carols10cents/rustlings
